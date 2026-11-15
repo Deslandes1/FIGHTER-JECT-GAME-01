@@ -17,14 +17,17 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H, cx, cy;
-let isTouch = false;
+
+// Two independent flags: one for touch capability, one for whether the user is actively using touch
+let touchCapable = false;
 
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
   cx = W / 2;
   cy = H / 2;
-  isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  touchCapable = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  updateTouchButtonPositions();
 }
 
 const F = 600;
@@ -42,15 +45,13 @@ let spawnTimer = 0, fireCooldown = 0, bombCooldown = 0;
 let shake = 0, flash = 0;
 let highScore = parseInt(localStorage.getItem('skyStrikeHigh') || '0');
 
-// ================== TOUCH / MOBILE UI ==================
-// On-screen fire button (bottom right) and bomb button (bottom left)
+// ================== TOUCH BUTTONS ==================
 const touchButtons = {
-  fire: { x: 0, y: 0, r: 0, pressed: false, visible: false },
-  bomb: { x: 0, y: 0, r: 0, pressed: false, visible: false }
+  fire: { x: 0, y: 0, r: 0, pressed: false },
+  bomb: { x: 0, y: 0, r: 0, pressed: false }
 };
 
 function updateTouchButtonPositions() {
-  // Scale buttons relative to screen size
   const btnR = Math.max(45, Math.min(W, H) * 0.09);
   touchButtons.fire.r = btnR;
   touchButtons.fire.x = W - btnR - 25;
@@ -89,7 +90,6 @@ function resetPosition() {
 window.addEventListener('resize', () => {
   resize();
   initClouds();
-  updateTouchButtonPositions();
 });
 resize();
 initClouds();
@@ -161,7 +161,7 @@ function gameOver() {
   }
 }
 
-// ================== INPUT (KEYBOARD) ==================
+// ================== INPUT — KEYBOARD ==================
 window.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === ' ') {
@@ -171,28 +171,25 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 
-// ================== INPUT (MOUSE) ==================
+// ================== INPUT — MOUSE (ALWAYS ENABLED ON LAPTOPS) ==================
 canvas.addEventListener('mousemove', e => {
-  if (isTouch) return;
   const r = canvas.getBoundingClientRect();
   mouseX = e.clientX - r.left;
   mouseY = e.clientY - r.top;
 });
 
 canvas.addEventListener('mousedown', e => {
-  if (isTouch) return;
   if (e.button === 0 && state === 'playing') dropBomb();
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// ================== INPUT (TOUCH) ==================
+// ================== INPUT — TOUCH ==================
 function handleTouchStart(e) {
+  // Only prevent default if this is genuinely a touch interaction
   e.preventDefault();
-  isTouch = true;
   initAudio();
 
   if (state === 'intro' || state === 'over') {
-    // Tap anywhere to start
     startGame();
     return;
   }
@@ -204,20 +201,17 @@ function handleTouchStart(e) {
     const tx = touch.clientX - r.left;
     const ty = touch.clientY - r.top;
 
-    // Check bomb button first
     if (isPointInButton(tx, ty, touchButtons.bomb)) {
       touchButtons.bomb.pressed = true;
       dropBomb();
       continue;
     }
 
-    // Check fire button
     if (isPointInButton(tx, ty, touchButtons.fire)) {
       touchButtons.fire.pressed = true;
       continue;
     }
 
-    // Otherwise, this touch aims the crosshair
     mouseX = tx;
     mouseY = ty;
   }
@@ -232,10 +226,8 @@ function handleTouchMove(e) {
     const tx = touch.clientX - r.left;
     const ty = touch.clientY - r.top;
 
-    // Ignore moves that started on the bomb button
     if (isPointInButton(tx, ty, touchButtons.bomb)) continue;
 
-    // Update crosshair from any touch not on buttons
     if (!isPointInButton(tx, ty, touchButtons.fire)) {
       mouseX = tx;
       mouseY = ty;
@@ -844,7 +836,6 @@ function drawHUD() {
   ctx.fillStyle = '#5a9a6a';
   ctx.fillText(health + '%', hx + bw + 10 * scale, hy + 31 * scale);
 
-  // Score panel (right)
   ctx.textAlign = 'right';
   const sxp = W - 20;
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
@@ -866,12 +857,11 @@ function drawHUD() {
   ctx.fillStyle = '#aaff88';
   ctx.fillText('WAVE ' + wave, sxp, 102 * scale);
 
-  // Bombs (left bottom)
   ctx.textAlign = 'left';
   ctx.fillStyle = '#5a9a6a';
   ctx.font = `bold ${baseFont}px monospace`;
-  const bombStartY = isTouch ? H - Math.max(45, Math.min(W, H) * 0.09) - 35 : H - 140;
-  const bombStartX = isTouch ? 20 : 40;
+  const bombStartY = touchCapable ? H - Math.max(45, Math.min(W, H) * 0.09) - 35 : H - 140;
+  const bombStartX = touchCapable ? 20 : 40;
   ctx.fillText('BOMBS', bombStartX, bombStartY);
 
   const bombScale = Math.min(W, H) / 800;
@@ -895,17 +885,15 @@ function drawHUD() {
     }
   }
 
-  // Kills (left bottom)
   ctx.fillStyle = '#5a9a6a';
   ctx.font = `bold ${baseFont}px monospace`;
   ctx.fillText('KILLS: ' + kills, bombStartX, bombStartY + 55);
 }
 
 function drawTouchControls() {
-  if (!isTouch) return;
+  if (!touchCapable) return;
 
   const btn = touchButtons.fire;
-  // Fire button (right)
   ctx.save();
   ctx.beginPath();
   ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
@@ -918,7 +906,6 @@ function drawTouchControls() {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Icon: crosshair / fire symbol
   ctx.strokeStyle = btn.pressed ? '#fff' : 'rgba(160, 255, 180, 0.9)';
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -932,7 +919,6 @@ function drawTouchControls() {
   ctx.stroke();
   ctx.restore();
 
-  // Bomb button (left)
   const bb = touchButtons.bomb;
   ctx.save();
   ctx.beginPath();
@@ -946,7 +932,6 @@ function drawTouchControls() {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Icon: bomb shape
   ctx.fillStyle = bb.pressed ? '#fff' : 'rgba(255, 200, 140, 0.9)';
   ctx.beginPath();
   ctx.ellipse(bb.x, bb.y + bb.r * 0.1, bb.r * 0.25, bb.r * 0.35, 0, 0, Math.PI * 2);
@@ -975,10 +960,9 @@ function drawIntro() {
   ctx.font = `bold ${Math.max(11, 16 * scale)}px monospace`;
   ctx.fillText('C O C K P I T   C O M B A T', W / 2, H * 0.22 + bigFont * 0.45);
 
-  // Controls: different for touch vs keyboard
   ctx.fillStyle = '#ffffff';
   ctx.font = `${Math.max(13, 18 * scale)}px monospace`;
-  if (isTouch) {
+  if (touchCapable) {
     ctx.fillText('TAP  —  START GAME', W / 2, H * 0.42);
     ctx.fillText('DRAG  —  AIM CROSSHAIR', W / 2, H * 0.42 + 30);
     ctx.fillText('HOLD  FIRE BUTTON  —  SHOOT', W / 2, H * 0.42 + 60);
@@ -989,12 +973,10 @@ function drawIntro() {
     ctx.fillText('MOUSE  —  AIM CROSSHAIR', W / 2, H * 0.42 + 64);
   }
 
-  // High score
   ctx.fillStyle = '#5a9a6a';
   ctx.font = `${Math.max(11, 14 * scale)}px monospace`;
   ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.60);
 
-  // ===== BUILT BY / CONTACT INFO =====
   ctx.fillStyle = '#7ab8a0';
   ctx.font = `bold ${Math.max(13, 16 * scale)}px monospace`;
   ctx.fillText('Built by Gesner Deslandes', W / 2, H * 0.68);
@@ -1006,12 +988,11 @@ function drawIntro() {
   ctx.fillText('Contact: (509) 47385663', W / 2, H * 0.68 + 44);
   ctx.fillText('Email: deslandes78@gmail.com', W / 2, H * 0.68 + 64);
 
-  // Pulse prompt
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#ffaa33';
   ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
-  ctx.fillText(isTouch ? 'TAP TO LAUNCH' : 'PRESS SPACEBAR TO LAUNCH', W / 2, H * 0.90);
+  ctx.fillText(touchCapable ? 'TAP TO LAUNCH' : 'PRESS SPACEBAR TO LAUNCH', W / 2, H * 0.90);
   ctx.globalAlpha = 1;
 }
 
@@ -1056,7 +1037,7 @@ function drawGameOver() {
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#ffaa33';
   ctx.font = `bold ${Math.max(16, 22 * scale)}px monospace`;
-  ctx.fillText(isTouch ? 'TAP TO FLY AGAIN' : 'PRESS SPACEBAR TO FLY AGAIN', W / 2, H * 0.88);
+  ctx.fillText(touchCapable ? 'TAP TO FLY AGAIN' : 'PRESS SPACEBAR TO FLY AGAIN', W / 2, H * 0.88);
   ctx.globalAlpha = 1;
 }
 
