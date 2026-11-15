@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>SKY STRIKE — Cockpit Combat</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  canvas { display: block; cursor: none; }
-  body { font-family: monospace; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
+  canvas { display: block; cursor: none; touch-action: none; }
+  body { font-family: monospace; -webkit-user-select: none; user-select: none; }
 </style>
 </head>
 <body>
@@ -16,12 +17,14 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H, cx, cy;
+let isTouch = false;
 
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
   cx = W / 2;
   cy = H / 2;
+  isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 }
 
 const F = 600;
@@ -38,6 +41,29 @@ let lastTime = 0, gameTime = 0;
 let spawnTimer = 0, fireCooldown = 0, bombCooldown = 0;
 let shake = 0, flash = 0;
 let highScore = parseInt(localStorage.getItem('skyStrikeHigh') || '0');
+
+// ================== TOUCH / MOBILE UI ==================
+// On-screen fire button (bottom right) and bomb button (bottom left)
+const touchButtons = {
+  fire: { x: 0, y: 0, r: 0, pressed: false, visible: false },
+  bomb: { x: 0, y: 0, r: 0, pressed: false, visible: false }
+};
+
+function updateTouchButtonPositions() {
+  // Scale buttons relative to screen size
+  const btnR = Math.max(45, Math.min(W, H) * 0.09);
+  touchButtons.fire.r = btnR;
+  touchButtons.fire.x = W - btnR - 25;
+  touchButtons.fire.y = H - btnR - 25;
+
+  touchButtons.bomb.r = btnR;
+  touchButtons.bomb.x = btnR + 25;
+  touchButtons.bomb.y = H - btnR - 25;
+}
+
+function isPointInButton(px, py, btn) {
+  return Math.hypot(px - btn.x, py - btn.y) < btn.r * 1.25;
+}
 
 // ================== CLOUDS ==================
 function initClouds() {
@@ -63,9 +89,11 @@ function resetPosition() {
 window.addEventListener('resize', () => {
   resize();
   initClouds();
+  updateTouchButtonPositions();
 });
 resize();
 initClouds();
+updateTouchButtonPositions();
 resetPosition();
 
 // ================== AUDIO ==================
@@ -133,7 +161,7 @@ function gameOver() {
   }
 }
 
-// ================== INPUT ==================
+// ================== INPUT (KEYBOARD) ==================
 window.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === ' ') {
@@ -143,16 +171,98 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 
+// ================== INPUT (MOUSE) ==================
 canvas.addEventListener('mousemove', e => {
+  if (isTouch) return;
   const r = canvas.getBoundingClientRect();
   mouseX = e.clientX - r.left;
   mouseY = e.clientY - r.top;
 });
 
 canvas.addEventListener('mousedown', e => {
+  if (isTouch) return;
   if (e.button === 0 && state === 'playing') dropBomb();
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ================== INPUT (TOUCH) ==================
+function handleTouchStart(e) {
+  e.preventDefault();
+  isTouch = true;
+  initAudio();
+
+  if (state === 'intro' || state === 'over') {
+    // Tap anywhere to start
+    startGame();
+    return;
+  }
+
+  if (state !== 'playing') return;
+
+  for (const touch of e.changedTouches) {
+    const r = canvas.getBoundingClientRect();
+    const tx = touch.clientX - r.left;
+    const ty = touch.clientY - r.top;
+
+    // Check bomb button first
+    if (isPointInButton(tx, ty, touchButtons.bomb)) {
+      touchButtons.bomb.pressed = true;
+      dropBomb();
+      continue;
+    }
+
+    // Check fire button
+    if (isPointInButton(tx, ty, touchButtons.fire)) {
+      touchButtons.fire.pressed = true;
+      continue;
+    }
+
+    // Otherwise, this touch aims the crosshair
+    mouseX = tx;
+    mouseY = ty;
+  }
+}
+
+function handleTouchMove(e) {
+  e.preventDefault();
+  if (state !== 'playing') return;
+
+  for (const touch of e.changedTouches) {
+    const r = canvas.getBoundingClientRect();
+    const tx = touch.clientX - r.left;
+    const ty = touch.clientY - r.top;
+
+    // Ignore moves that started on the bomb button
+    if (isPointInButton(tx, ty, touchButtons.bomb)) continue;
+
+    // Update crosshair from any touch not on buttons
+    if (!isPointInButton(tx, ty, touchButtons.fire)) {
+      mouseX = tx;
+      mouseY = ty;
+    }
+  }
+}
+
+function handleTouchEnd(e) {
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    const r = canvas.getBoundingClientRect();
+    const tx = touch.clientX - r.left;
+    const ty = touch.clientY - r.top;
+
+    if (isPointInButton(tx, ty, touchButtons.fire)) {
+      touchButtons.fire.pressed = false;
+    }
+    if (isPointInButton(tx, ty, touchButtons.bomb)) {
+      touchButtons.bomb.pressed = false;
+    }
+  }
+}
+
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
 // ================== SPAWN ==================
 function spawnEnemy() {
@@ -278,7 +388,9 @@ function update(dt) {
     spawnTimer = rate + Math.random() * 0.3;
   }
 
-  if (keys[' '] && fireCooldown <= 0) {
+  // Fire from keyboard OR touch fire button
+  const fireHeld = keys[' '] || touchButtons.fire.pressed;
+  if (fireHeld && fireCooldown <= 0) {
     fire();
     fireCooldown = 0.11;
   }
@@ -359,6 +471,7 @@ function render() {
   if (state === 'playing') {
     drawHUD();
     drawCrosshair();
+    drawTouchControls();
   }
 
   ctx.restore();
@@ -705,110 +818,200 @@ function drawCockpit() {
 }
 
 function drawHUD() {
-  const hx = 40, hy = 40;
+  const hx = 20, hy = 20;
+  const scale = Math.min(W, H) / 800;
+  const baseFont = Math.max(10, 12 * scale);
+
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
   ctx.beginPath();
-  ctx.roundRect(hx - 15, hy - 15, 250, 90, 6);
+  ctx.roundRect(hx - 10, hy - 10, Math.max(180, 220 * scale), Math.max(75, 85 * scale), 6);
   ctx.fill();
 
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 12px monospace';
+  ctx.font = `bold ${baseFont}px monospace`;
   ctx.textAlign = 'left';
-  ctx.fillText('HULL INTEGRITY', hx, hy + 8);
+  ctx.fillText('HULL INTEGRITY', hx, hy + 8 * scale);
 
-  const bw = 210, bh = 14;
+  const bw = Math.max(140, 190 * scale), bh = Math.max(10, 12 * scale);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(hx, hy + 20, bw, bh);
+  ctx.fillRect(hx, hy + 20 * scale, bw, bh);
   const hc = health > 60 ? '#4aff7a' : (health > 30 ? '#ffaa33' : '#ff3344');
   ctx.fillStyle = hc;
-  ctx.fillRect(hx, hy + 20, bw * (health / 100), bh);
+  ctx.fillRect(hx, hy + 20 * scale, bw * (health / 100), bh);
   ctx.strokeStyle = '#5a9a6a';
-  ctx.strokeRect(hx, hy + 20, bw, bh);
+  ctx.strokeRect(hx, hy + 20 * scale, bw, bh);
 
   ctx.fillStyle = '#5a9a6a';
-  ctx.fillText(health + '%', hx + bw + 10, hy + 31);
+  ctx.fillText(health + '%', hx + bw + 10 * scale, hy + 31 * scale);
 
+  // Score panel (right)
   ctx.textAlign = 'right';
-  const sxp = W - 40;
+  const sxp = W - 20;
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
   ctx.beginPath();
-  ctx.roundRect(sxp - 235, 25, 235, 110, 6);
+  ctx.roundRect(sxp - Math.max(170, 210 * scale), 15, Math.max(170, 210 * scale), Math.max(85, 100 * scale), 6);
   ctx.fill();
 
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText('SCORE', sxp, 45);
+  ctx.font = `bold ${baseFont}px monospace`;
+  ctx.fillText('SCORE', sxp, 35 * scale);
 
   ctx.fillStyle = '#aaffaa';
-  ctx.font = 'bold 30px monospace';
-  ctx.fillText(score.toString().padStart(6, '0'), sxp, 78);
+  ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
+  ctx.fillText(score.toString().padStart(6, '0'), sxp, 65 * scale);
 
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('HIGH: ' + highScore.toString().padStart(6, '0'), sxp, 100);
+  ctx.font = `bold ${Math.max(9, 10 * scale)}px monospace`;
+  ctx.fillText('HIGH: ' + highScore.toString().padStart(6, '0'), sxp, 85 * scale);
   ctx.fillStyle = '#aaff88';
-  ctx.fillText('WAVE ' + wave, sxp, 120);
+  ctx.fillText('WAVE ' + wave, sxp, 102 * scale);
 
+  // Bombs (left bottom)
   ctx.textAlign = 'left';
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText('BOMBS', hx, H - 140);
+  ctx.font = `bold ${baseFont}px monospace`;
+  const bombStartY = isTouch ? H - Math.max(45, Math.min(W, H) * 0.09) - 35 : H - 140;
+  const bombStartX = isTouch ? 20 : 40;
+  ctx.fillText('BOMBS', bombStartX, bombStartY);
 
+  const bombScale = Math.min(W, H) / 800;
+  const bombSpacing = Math.max(20, 26 * bombScale);
   for (let i = 0; i < maxBombs; i++) {
-    const bx = hx + i * 30;
-    const by = H - 115;
+    const bx = bombStartX + i * bombSpacing;
+    const by = bombStartY + 22;
     if (i < bombs) {
       ctx.fillStyle = '#ffaa33';
       ctx.beginPath();
-      ctx.ellipse(bx + 8, by + 10, 5, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#cc5522';
-      ctx.fillRect(bx, by + 4, 16, 3);
+      ctx.fillRect(bx, by + 3, 12, 2);
     } else {
       ctx.strokeStyle = '#3a5a4a';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.ellipse(bx + 8, by + 10, 5, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
 
+  // Kills (left bottom)
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText('KILLS: ' + kills, hx, H - 65);
+  ctx.font = `bold ${baseFont}px monospace`;
+  ctx.fillText('KILLS: ' + kills, bombStartX, bombStartY + 55);
+}
+
+function drawTouchControls() {
+  if (!isTouch) return;
+
+  const btn = touchButtons.fire;
+  // Fire button (right)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+  const fg = ctx.createRadialGradient(btn.x, btn.y, 0, btn.x, btn.y, btn.r);
+  fg.addColorStop(0, btn.pressed ? 'rgba(255, 160, 60, 0.8)' : 'rgba(90, 180, 110, 0.25)');
+  fg.addColorStop(1, btn.pressed ? 'rgba(255, 120, 20, 0.4)' : 'rgba(90, 180, 110, 0.08)');
+  ctx.fillStyle = fg;
+  ctx.fill();
+  ctx.strokeStyle = btn.pressed ? '#ffaa33' : 'rgba(120, 255, 160, 0.7)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Icon: crosshair / fire symbol
+  ctx.strokeStyle = btn.pressed ? '#fff' : 'rgba(160, 255, 180, 0.9)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(btn.x - btn.r * 0.4, btn.y);
+  ctx.lineTo(btn.x + btn.r * 0.4, btn.y);
+  ctx.moveTo(btn.x, btn.y - btn.r * 0.4);
+  ctx.lineTo(btn.x, btn.y + btn.r * 0.4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(btn.x, btn.y, btn.r * 0.2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Bomb button (left)
+  const bb = touchButtons.bomb;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bb.x, bb.y, bb.r, 0, Math.PI * 2);
+  const bg = ctx.createRadialGradient(bb.x, bb.y, 0, bb.x, bb.y, bb.r);
+  bg.addColorStop(0, bb.pressed ? 'rgba(255, 160, 60, 0.8)' : 'rgba(180, 120, 90, 0.25)');
+  bg.addColorStop(1, bb.pressed ? 'rgba(255, 120, 20, 0.4)' : 'rgba(180, 120, 90, 0.08)');
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.strokeStyle = bb.pressed ? '#ffaa33' : 'rgba(255, 180, 120, 0.7)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Icon: bomb shape
+  ctx.fillStyle = bb.pressed ? '#fff' : 'rgba(255, 200, 140, 0.9)';
+  ctx.beginPath();
+  ctx.ellipse(bb.x, bb.y + bb.r * 0.1, bb.r * 0.25, bb.r * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = bb.pressed ? '#fff' : 'rgba(255, 200, 140, 0.7)';
+  ctx.fillRect(bb.x - bb.r * 0.25, bb.y - bb.r * 0.15, bb.r * 0.5, bb.r * 0.12);
+  ctx.restore();
 }
 
 function drawIntro() {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, W, H);
 
+  const scale = Math.min(W, H) / 800;
+  const bigFont = Math.max(34, Math.min(72, W * 0.1));
+
   ctx.textAlign = 'center';
   ctx.fillStyle = '#aaffaa';
-  ctx.font = 'bold 72px monospace';
+  ctx.font = `bold ${bigFont}px monospace`;
   ctx.shadowColor = '#4aff7a';
   ctx.shadowBlur = 20;
-  ctx.fillText('SKY STRIKE', W / 2, H * 0.28);
+  ctx.fillText('SKY STRIKE', W / 2, H * 0.22);
   ctx.shadowBlur = 0;
 
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = 'bold 16px monospace';
-  ctx.fillText('C O C K P I T   C O M B A T', W / 2, H * 0.28 + 32);
+  ctx.font = `bold ${Math.max(11, 16 * scale)}px monospace`;
+  ctx.fillText('C O C K P I T   C O M B A T', W / 2, H * 0.22 + bigFont * 0.45);
 
+  // Controls: different for touch vs keyboard
   ctx.fillStyle = '#ffffff';
-  ctx.font = '18px monospace';
-  ctx.fillText('SPACEBAR  —  FIRE CANNONS', W / 2, H * 0.5);
-  ctx.fillText('LEFT CLICK  —  DROP BOMB', W / 2, H * 0.5 + 32);
-  ctx.fillText('MOUSE  —  AIM CROSSHAIR', W / 2, H * 0.5 + 64);
+  ctx.font = `${Math.max(13, 18 * scale)}px monospace`;
+  if (isTouch) {
+    ctx.fillText('TAP  —  START GAME', W / 2, H * 0.42);
+    ctx.fillText('DRAG  —  AIM CROSSHAIR', W / 2, H * 0.42 + 30);
+    ctx.fillText('HOLD  FIRE BUTTON  —  SHOOT', W / 2, H * 0.42 + 60);
+    ctx.fillText('TAP  BOMB BUTTON  —  DROP BOMB', W / 2, H * 0.42 + 90);
+  } else {
+    ctx.fillText('SPACEBAR  —  FIRE CANNONS', W / 2, H * 0.42);
+    ctx.fillText('LEFT CLICK  —  DROP BOMB', W / 2, H * 0.42 + 32);
+    ctx.fillText('MOUSE  —  AIM CROSSHAIR', W / 2, H * 0.42 + 64);
+  }
 
+  // High score
   ctx.fillStyle = '#5a9a6a';
-  ctx.font = '14px monospace';
-  ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.72);
+  ctx.font = `${Math.max(11, 14 * scale)}px monospace`;
+  ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.60);
 
+  // ===== BUILT BY / CONTACT INFO =====
+  ctx.fillStyle = '#7ab8a0';
+  ctx.font = `bold ${Math.max(13, 16 * scale)}px monospace`;
+  ctx.fillText('Built by Gesner Deslandes', W / 2, H * 0.68);
+  ctx.fillStyle = '#5a9a6a';
+  ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
+  ctx.fillText('Software Developer', W / 2, H * 0.68 + 22);
+  ctx.fillStyle = '#8ab8a8';
+  ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
+  ctx.fillText('Contact: (509) 47385663', W / 2, H * 0.68 + 44);
+  ctx.fillText('Email: deslandes78@gmail.com', W / 2, H * 0.68 + 64);
+
+  // Pulse prompt
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#ffaa33';
-  ctx.font = 'bold 26px monospace';
-  ctx.fillText('PRESS SPACEBAR TO LAUNCH', W / 2, H * 0.82);
+  ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
+  ctx.fillText(isTouch ? 'TAP TO LAUNCH' : 'PRESS SPACEBAR TO LAUNCH', W / 2, H * 0.90);
   ctx.globalAlpha = 1;
 }
 
@@ -816,20 +1019,23 @@ function drawGameOver() {
   ctx.fillStyle = 'rgba(20, 0, 0, 0.72)';
   ctx.fillRect(0, 0, W, H);
 
+  const scale = Math.min(W, H) / 800;
+  const bigFont = Math.max(30, Math.min(80, W * 0.11));
+
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ff3344';
-  ctx.font = 'bold 80px monospace';
+  ctx.font = `bold ${bigFont}px monospace`;
   ctx.shadowColor = '#ff3344';
   ctx.shadowBlur = 25;
   ctx.fillText('SHOT DOWN', W / 2, H * 0.32);
   ctx.shadowBlur = 0;
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 28px monospace';
+  ctx.font = `bold ${Math.max(18, 28 * scale)}px monospace`;
   ctx.fillText('SCORE  ' + score, W / 2, H * 0.47);
 
   ctx.fillStyle = '#ffaa33';
-  ctx.font = '20px monospace';
+  ctx.font = `${Math.max(14, 20 * scale)}px monospace`;
   ctx.fillText('KILLS  ' + kills, W / 2, H * 0.55);
   ctx.fillText('WAVE REACHED  ' + wave, W / 2, H * 0.61);
 
@@ -837,20 +1043,20 @@ function drawGameOver() {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
     ctx.globalAlpha = pulse;
     ctx.fillStyle = '#aaffaa';
-    ctx.font = 'bold 24px monospace';
-    ctx.fillText('★ NEW HIGH SCORE ★', W / 2, H * 0.7);
+    ctx.font = `bold ${Math.max(18, 24 * scale)}px monospace`;
+    ctx.fillText('★ NEW HIGH SCORE ★', W / 2, H * 0.70);
     ctx.globalAlpha = 1;
   } else {
     ctx.fillStyle = '#5a9a6a';
-    ctx.font = '16px monospace';
-    ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.7);
+    ctx.font = `${Math.max(12, 16 * scale)}px monospace`;
+    ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.70);
   }
 
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#ffaa33';
-  ctx.font = 'bold 22px monospace';
-  ctx.fillText('PRESS SPACEBAR TO FLY AGAIN', W / 2, H * 0.86);
+  ctx.font = `bold ${Math.max(16, 22 * scale)}px monospace`;
+  ctx.fillText(isTouch ? 'TAP TO FLY AGAIN' : 'PRESS SPACEBAR TO FLY AGAIN', W / 2, H * 0.88);
   ctx.globalAlpha = 1;
 }
 
