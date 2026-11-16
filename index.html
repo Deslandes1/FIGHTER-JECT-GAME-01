@@ -3,21 +3,525 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>SKY STRIKE — Cockpit Combat (2D Backup)</title>
+<title>SKY STRIKE — NVIDIA App Edition</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
-  canvas { display: block; cursor: none; touch-action: none; }
+  canvas { display: block; touch-action: none; cursor: none; }
   body { font-family: monospace; -webkit-user-select: none; user-select: none; }
+
+  /* ── NVIDIA App window (left panel) ── */
+  #nvidiaApp {
+    position: fixed; top: 0; left: 0; width: 340px; height: 100%; z-index: 30;
+    background: rgba(14,14,14,0.92); backdrop-filter: blur(10px);
+    border-right: 1px solid #222; display: flex; flex-direction: column;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #e5e5e5;
+    transition: transform 0.3s ease;
+  }
+  #nvidiaApp.collapsed { transform: translateX(-310px); }
+  #appTabs {
+    display: flex; border-bottom: 1px solid #222; padding: 0 6px; gap: 2px;
+    background: #121212; flex-shrink: 0;
+  }
+  .appTab {
+    padding: 9px 12px; font-size: 11px; font-weight: 500; color: #888;
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .appTab:hover { color: #ccc; }
+  .appTab.active { color: #76b900; border-bottom-color: #76b900; }
+  #appContent { flex: 1; overflow-y: auto; padding: 12px; }
+  #appContent::-webkit-scrollbar { width: 6px; }
+  #appContent::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+  .section {
+    background: #161616; border: 1px solid #242424; border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .sectionTitle {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+    color: #76b900; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .sectionTitle::before {
+    content: ''; width: 3px; height: 12px; background: #76b900; border-radius: 2px;
+  }
+  .statRow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid #1e1e1e; font-size: 11px;
+  }
+  .statRow:last-child { border-bottom: none; }
+  .statLabel { color: #888; }
+  .statValue { color: #e5e5e5; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .statValue.green { color: #76b900; }
+  .statValue.blue { color: #4a9eff; }
+  .statValue.orange { color: #ff9e4a; }
+  .statValue.red { color: #ff5f57; }
+
+  .sliderRow { margin-bottom: 12px; }
+  .sliderRow:last-child { margin-bottom: 0; }
+  .sliderLabel {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; margin-bottom: 5px;
+  }
+  .sliderLabel .name { color: #aaa; }
+  .sliderLabel .val { color: #76b900; font-weight: 600; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+    background: #2a2a2a; border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 13px; height: 13px;
+    background: #76b900; border-radius: 50%; cursor: pointer;
+    box-shadow: 0 0 8px rgba(118,185,0,0.5); transition: transform 0.1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  input[type=range]::-moz-range-thumb {
+    width: 13px; height: 13px; background: #76b900; border-radius: 50%;
+    border: none; cursor: pointer; box-shadow: 0 0 8px rgba(118,185,0,0.5);
+  }
+
+  .toggleRow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid #1e1e1e;
+  }
+  .toggleRow:last-child { border-bottom: none; }
+  .toggleRow .toggleLabel { font-size: 11px; color: #ccc; }
+  .toggleRow .toggleSub { font-size: 9px; color: #666; margin-top: 2px; }
+  .toggle {
+    position: relative; width: 36px; height: 20px; border-radius: 10px;
+    background: #2a2a2a; cursor: pointer; transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle.on { background: #76b900; }
+  .toggle::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fff;
+    transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(16px); }
+
+  /* ── Toggle app button ── */
+  #appToggle {
+    position: fixed; top: 8px; left: 348px; z-index: 35;
+    background: #76b900; border: none; color: #000; width: 26px; height: 26px;
+    border-radius: 50%; cursor: pointer; font-size: 14px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+    transition: left 0.3s ease, transform 0.15s;
+    box-shadow: 0 0 12px rgba(118,185,0,0.6);
+  }
+  #appToggle:hover { transform: scale(1.1); }
+  #appToggle.collapsed { left: 8px; }
+
+  /* ── Alt+Z Overlay HUD ── */
+  #overlayHud {
+    position: fixed; top: 14px; right: 14px; z-index: 40;
+    background: rgba(10, 10, 10, 0.88);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(118, 185, 0, 0.3);
+    border-radius: 10px;
+    padding: 12px 14px;
+    min-width: 220px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 20px rgba(118,185,0,0.08);
+    font-family: 'Segoe UI', monospace;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  #overlayHud.hidden { opacity: 0; transform: translateY(-10px); pointer-events: none; }
+  #overlayHud .hudHeader {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(118,185,0,0.2);
+  }
+  #overlayHud .hudTitle {
+    font-size: 10px; font-weight: 700; color: #76b900; letter-spacing: 1.5px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #overlayHud .hudTitle .dot {
+    width: 6px; height: 6px; background: #76b900; border-radius: 50%;
+    animation: pulseDot 1.5s infinite;
+  }
+  @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  #overlayHud .hudClose {
+    color: #666; font-size: 13px; cursor: pointer; line-height: 1;
+    padding: 2px 6px; border-radius: 4px; transition: all 0.15s;
+  }
+  #overlayHud .hudClose:hover { color: #ff5f57; background: rgba(255,95,87,0.1); }
+
+  .hudStat {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 3px 0;
+  }
+  .hudStat .hLabel { font-size: 10px; color: #888; }
+  .hudStat .hValue {
+    font-size: 15px; font-weight: 700; color: #e5e5e5; font-variant-numeric: tabular-nums;
+    transition: color 0.3s;
+  }
+  .hudStat .hValue.fps { color: #76b900; }
+  .hudStat .hValue.warn { color: #ff9e4a; }
+  .hudStat .hValue.bad { color: #ff5f57; }
+  .hudUnit { font-size: 9px; color: #666; margin-left: 3px; }
+
+  .hudBar {
+    height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px;
+    margin: 4px 0 3px 0; overflow: hidden;
+  }
+  .hudBar .fill {
+    height: 100%; border-radius: 2px; transition: width 0.4s ease, background 0.3s;
+  }
+  .hudBar .fill.gpu { background: linear-gradient(90deg, #4a9eff, #76b900); }
+  .hudBar .fill.cpu { background: linear-gradient(90deg, #76b900, #ff9e4a); }
+  .hudBar .fill.vram { background: linear-gradient(90deg, #9b59ff, #4a9eff); }
+
+  .hudMiniChart {
+    display: flex; align-items: flex-end; gap: 2px; height: 28px;
+    margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(118,185,0,0.15);
+  }
+  .hudMiniChart .bar {
+    flex: 1; background: rgba(118,185,0,0.4); border-radius: 1px 1px 0 0;
+    min-height: 2px; transition: height 0.15s;
+  }
+
+  /* ── Alt+Z hint ── */
+  #altzHint {
+    position: fixed; bottom: 14px; right: 14px; z-index: 38;
+    background: rgba(10,10,10,0.8); border: 1px solid #333; border-radius: 6px;
+    padding: 8px 12px; font-size: 10px; color: #888; font-family: monospace;
+    backdrop-filter: blur(6px); pointer-events: none;
+  }
+  #altzHint kbd {
+    background: #222; border: 1px solid #444; border-radius: 3px;
+    padding: 1px 5px; font-size: 9px; color: #76b900; font-weight: 600;
+  }
+
+  /* ── Mobile: hide app by default ── */
+  @media (max-width: 900px) {
+    #nvidiaApp { width: 280px; }
+    #nvidiaApp.collapsed { transform: translateX(-252px); }
+    #appToggle { left: 288px; }
+    #appToggle.collapsed { left: 8px; }
+    #overlayHud { min-width: 180px; padding: 10px 12px; }
+    .hudStat .hValue { font-size: 13px; }
+  }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<!-- NVIDIA App window -->
+<div id="nvidiaApp" class="collapsed">
+  <div id="appTabs">
+    <div class="appTab active" onclick="switchTab(this, 'dashboard')">Dashboard</div>
+    <div class="appTab" onclick="switchTab(this, 'performance')">Performance</div>
+    <div class="appTab" onclick="switchTab(this, 'overlay')">Overlay</div>
+  </div>
+  <div id="appContent">
+    <!-- Dashboard -->
+    <div id="tab-dashboard" class="tabPane">
+      <div class="section">
+        <div class="sectionTitle">System Summary</div>
+        <div class="statRow"><span class="statLabel">GPU</span><span class="statValue">RTX 4080</span></div>
+        <div class="statRow"><span class="statLabel">Driver</span><span class="statValue blue">551.86</span></div>
+        <div class="statRow"><span class="statLabel">GPU Temp</span><span class="statValue orange" id="dashTemp">62°C</span></div>
+        <div class="statRow"><span class="statLabel">GPU Load</span><span class="statValue green" id="dashGpuUtil">78%</span></div>
+        <div class="statRow"><span class="statLabel">VRAM</span><span class="statValue blue" id="dashVram">6.2 GB</span></div>
+        <div class="statRow"><span class="statLabel">CPU Load</span><span class="statValue" id="dashCpuUtil">42%</span></div>
+      </div>
+      <div class="section">
+        <div class="sectionTitle">Game Profile</div>
+        <div class="statRow"><span class="statLabel">Game</span><span class="statValue green">SKY STRIKE</span></div>
+        <div class="statRow"><span class="statLabel">Resolution</span><span class="statValue">2560 × 1440</span></div>
+        <div class="statRow"><span class="statLabel">API</span><span class="statValue">DirectX 12</span></div>
+        <div class="statRow"><span class="statLabel">Quality</span><span class="statValue">Ultra</span></div>
+        <div class="statRow"><span class="statLabel">DLSS</span><span class="statValue green">Quality</span></div>
+      </div>
+    </div>
+    <!-- Performance -->
+    <div id="tab-performance" class="tabPane" style="display:none;">
+      <div class="section">
+        <div class="sectionTitle">Live Telemetry</div>
+        <div class="statRow"><span class="statLabel">FPS</span><span class="statValue green" id="perfFps">144</span></div>
+        <div class="statRow"><span class="statLabel">Frame Time</span><span class="statValue" id="perfFrameTime">6.9 ms</span></div>
+        <div class="statRow"><span class="statLabel">GPU</span><span class="statValue blue" id="perfGpu">78%</span></div>
+        <div class="statRow"><span class="statLabel">CPU</span><span class="statValue" id="perfCpu">42%</span></div>
+        <div class="statRow"><span class="statLabel">Temp</span><span class="statValue orange" id="perfTemp">62°C</span></div>
+        <div class="statRow"><span class="statLabel">Power</span><span class="statValue" id="perfPower">285 W</span></div>
+      </div>
+      <div class="section">
+        <div class="sectionTitle">Performance Sliders</div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">Power Limit</span><span class="val" id="valPower">100%</span></div>
+          <input type="range" id="sliderPower" min="50" max="120" value="100" oninput="updateSlider('power', this.value)">
+        </div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">GPU Clock</span><span class="val" id="valGpuClock">+0 MHz</span></div>
+          <input type="range" id="sliderGpuClock" min="-200" max="200" value="0" oninput="updateSlider('gpuClock', this.value)">
+        </div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">Mem Clock</span><span class="val" id="valMemClock">+0 MHz</span></div>
+          <input type="range" id="sliderMemClock" min="-500" max="1000" value="0" oninput="updateSlider('memClock', this.value)">
+        </div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">Fan Speed</span><span class="val" id="valFan">55%</span></div>
+          <input type="range" id="sliderFan" min="0" max="100" value="55" oninput="updateSlider('fan', this.value)">
+        </div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">FPS Cap</span><span class="val" id="valFpsCap">144</span></div>
+          <input type="range" id="sliderFpsCap" min="30" max="360" value="144" oninput="updateSlider('fpsCap', this.value)">
+        </div>
+      </div>
+    </div>
+    <!-- Overlay -->
+    <div id="tab-overlay" class="tabPane" style="display:none;">
+      <div class="section">
+        <div class="sectionTitle">Alt+Z Overlay</div>
+        <div class="toggleRow">
+          <div><div class="toggleLabel">Performance Overlay</div><div class="toggleSub">FPS and GPU stats</div></div>
+          <div class="toggle on" id="toggleOverlay" onclick="toggleOverlay()"></div>
+        </div>
+        <div class="toggleRow">
+          <div><div class="toggleLabel">Temperature</div><div class="toggleSub">GPU temp reading</div></div>
+          <div class="toggle on" id="toggleTemp" onclick="toggleSwitch(this)"></div>
+        </div>
+        <div class="toggleRow">
+          <div><div class="toggleLabel">Mini Chart</div><div class="toggleSub">FPS history graph</div></div>
+          <div class="toggle on" id="toggleChart" onclick="toggleSwitch(this)"></div>
+        </div>
+        <div class="toggleRow">
+          <div><div class="toggleLabel">VRAM</div><div class="toggleSub">Video memory bar</div></div>
+          <div class="toggle on" id="toggleVram" onclick="toggleSwitch(this)"></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="sectionTitle">Appearance</div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">Opacity</span><span class="val" id="valOpacity">88%</span></div>
+          <input type="range" id="sliderOpacity" min="20" max="100" value="88" oninput="updateOpacity(this.value)">
+        </div>
+        <div class="sliderRow">
+          <div class="sliderLabel"><span class="name">Scale</span><span class="val" id="valScale">100%</span></div>
+          <input type="range" id="sliderScale" min="80" max="140" value="100" oninput="updateScale(this.value)">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<button id="appToggle" class="collapsed" onclick="toggleApp()">▶</button>
+
+<!-- Alt+Z Overlay HUD -->
+<div id="overlayHud">
+  <div class="hudHeader">
+    <div class="hudTitle"><span class="dot"></span> PERFORMANCE</div>
+    <div class="hudClose" onclick="toggleOverlay()">✕</div>
+  </div>
+  <div class="hudStat">
+    <span class="hLabel">FPS</span>
+    <span><span class="hValue fps" id="hudFps">144</span><span class="hUnit">FPS</span></span>
+  </div>
+  <div class="hudStat">
+    <span class="hLabel">Frame Time</span>
+    <span><span class="hValue" id="hudFrameTime">6.9</span><span class="hUnit">ms</span></span>
+  </div>
+  <div class="hudStat" style="padding-bottom:2px;">
+    <span class="hLabel">GPU</span>
+    <span><span class="hValue" id="hudGpu">78</span><span class="hUnit">%</span></span>
+  </div>
+  <div class="hudBar"><div class="fill gpu" id="hudGpuBar" style="width:78%"></div></div>
+  <div class="hudStat" style="padding-bottom:2px;">
+    <span class="hLabel">CPU</span>
+    <span><span class="hValue" id="hudCpu">42</span><span class="hUnit">%</span></span>
+  </div>
+  <div class="hudBar"><div class="fill cpu" id="hudCpuBar" style="width:42%"></div></div>
+  <div class="hudStat" style="padding-bottom:2px;" id="hudVramRow">
+    <span class="hLabel">VRAM</span>
+    <span><span class="hValue" id="hudVram">6.2</span><span class="hUnit">GB</span></span>
+  </div>
+  <div class="hudBar" id="hudVramBarWrap"><div class="fill vram" id="hudVramBar" style="width:39%"></div></div>
+  <div class="hudStat" id="hudTempRow">
+    <span class="hLabel">Temp</span>
+    <span><span class="hValue" id="hudTemp">62</span><span class="hUnit">°C</span></span>
+  </div>
+  <div class="hudMiniChart" id="hudChart"></div>
+</div>
+
+<div id="altzHint">Press <kbd>Alt</kbd> + <kbd>Z</kbd> to toggle overlay</div>
+
 <script>
+/* ═══════════════════════════════════════════════════════════════
+   NVIDIA APP — STATE
+   ═══════════════════════════════════════════════════════════════ */
+const nvState = {
+  fps: 144, gpu: 78, cpu: 42, temp: 62, vram: 6.2, power: 285,
+  powerLimit: 100, gpuClock: 0, memClock: 0, fan: 55, fpsCap: 144,
+  overlayVisible: true, showTemp: true, showChart: true, showVram: true,
+  opacity: 88, scale: 100, fpsHistory: []
+};
+
+function switchTab(el, name) {
+  document.querySelectorAll('.appTab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.tabPane').forEach(p => p.style.display = 'none');
+  document.getElementById('tab-' + name).style.display = 'block';
+}
+
+function toggleApp() {
+  const app = document.getElementById('nvidiaApp');
+  const btn = document.getElementById('appToggle');
+  app.classList.toggle('collapsed');
+  btn.classList.toggle('collapsed');
+  btn.textContent = app.classList.contains('collapsed') ? '▶' : '◀';
+}
+
+function updateSlider(type, val) {
+  val = parseFloat(val);
+  switch(type) {
+    case 'power': nvState.powerLimit = val; document.getElementById('valPower').textContent = val + '%'; break;
+    case 'gpuClock': nvState.gpuClock = val; document.getElementById('valGpuClock').textContent = (val >= 0 ? '+' : '') + val + ' MHz'; break;
+    case 'memClock': nvState.memClock = val; document.getElementById('valMemClock').textContent = (val >= 0 ? '+' : '') + val + ' MHz'; break;
+    case 'fan': nvState.fan = val; document.getElementById('valFan').textContent = val + '%'; break;
+    case 'fpsCap': nvState.fpsCap = val; document.getElementById('valFpsCap').textContent = val; break;
+  }
+}
+
+function updateOpacity(val) {
+  nvState.opacity = val;
+  document.getElementById('valOpacity').textContent = val + '%';
+  document.getElementById('overlayHud').style.opacity = val / 100;
+}
+
+function updateScale(val) {
+  nvState.scale = val;
+  document.getElementById('valScale').textContent = val + '%';
+  document.getElementById('overlayHud').style.transform = `scale(${val / 100})`;
+  document.getElementById('overlayHud').style.transformOrigin = 'top right';
+}
+
+function toggleSwitch(el) {
+  el.classList.toggle('on');
+  if (el.id === 'toggleTemp') nvState.showTemp = el.classList.contains('on');
+  if (el.id === 'toggleChart') nvState.showChart = el.classList.contains('on');
+  if (el.id === 'toggleVram') nvState.showVram = el.classList.contains('on');
+  applyOverlayVisibility();
+}
+
+function toggleOverlay() {
+  nvState.overlayVisible = !nvState.overlayVisible;
+  document.getElementById('overlayHud').classList.toggle('hidden', !nvState.overlayVisible);
+  const t = document.getElementById('toggleOverlay');
+  if (t) t.classList.toggle('on', nvState.overlayVisible);
+}
+
+function applyOverlayVisibility() {
+  document.getElementById('hudTempRow').style.display = nvState.showTemp ? 'flex' : 'none';
+  document.getElementById('hudVramRow').style.display = nvState.showVram ? 'flex' : 'none';
+  document.getElementById('hudVramBarWrap').style.display = nvState.showVram ? 'block' : 'none';
+  document.getElementById('hudChart').style.display = nvState.showChart ? 'flex' : 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); toggleOverlay(); }
+});
+
+/* Mini chart */
+const CHART_BARS = 24;
+function buildChart() {
+  const chart = document.getElementById('hudChart');
+  chart.innerHTML = '';
+  for (let i = 0; i < CHART_BARS; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = '2px';
+    chart.appendChild(bar);
+  }
+}
+buildChart();
+
+function updateChart() {
+  const bars = document.getElementById('hudChart').children;
+  for (let i = 0; i < bars.length; i++) {
+    const v = nvState.fpsHistory[i] || 0;
+    const h = Math.max(2, (v / 240) * 26);
+    bars[i].style.height = h + 'px';
+    if (v < 60) bars[i].style.background = 'rgba(255,95,87,0.6)';
+    else if (v < 100) bars[i].style.background = 'rgba(255,158,74,0.6)';
+    else bars[i].style.background = 'rgba(118,185,0,0.5)';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NVIDIA TELEMETRY SIMULATION — tied to game load
+   ═══════════════════════════════════════════════════════════════ */
+let gameLoadFactor = 0.5; // updated by game loop (0..1)
+
+function nvSimLoop() {
+  // Game engine demands drive the numbers
+  const demand = gameLoadFactor;
+  const base = Math.min(nvState.fpsCap, 240);
+  const clockBoost = nvState.gpuClock / 200 * 8;
+  const powerBoost = (nvState.powerLimit - 100) / 20 * 4;
+
+  let fps = base * (1 - demand * 0.35) + clockBoost + powerBoost + (Math.random() - 0.5) * 6;
+  fps = Math.max(30, Math.min(360, fps));
+  nvState.fps = fps;
+
+  let gpu = 45 + demand * 50 + (Math.random() - 0.5) * 5;
+  gpu = Math.max(10, Math.min(99, gpu));
+  nvState.gpu = gpu;
+
+  let cpu = 30 + demand * 45 + (Math.random() - 0.5) * 8;
+  cpu = Math.max(5, Math.min(95, cpu));
+  nvState.cpu = cpu;
+
+  let temp = 45 + gpu * 0.35 + (Math.random() - 0.5) * 2;
+  temp = Math.max(30, Math.min(90, temp));
+  nvState.temp = temp;
+
+  let vram = 4.5 + (gpu / 100) * 6 + (Math.random() - 0.5) * 0.3;
+  vram = Math.max(2, Math.min(16, vram));
+  nvState.vram = vram;
+
+  let power = 150 + gpu * 2.5 * (nvState.powerLimit / 100);
+  nvState.power = Math.round(power);
+
+  const frameTime = 1000 / fps;
+  nvState.fpsHistory.push(fps);
+  if (nvState.fpsHistory.length > CHART_BARS) nvState.fpsHistory.shift();
+
+  // Update HUD
+  const hudFps = document.getElementById('hudFps');
+  hudFps.textContent = Math.round(fps);
+  hudFps.className = 'hValue fps' + (fps < 60 ? ' bad' : fps < 100 ? ' warn' : '');
+  document.getElementById('hudFrameTime').textContent = frameTime.toFixed(1);
+  document.getElementById('hudGpu').textContent = Math.round(gpu);
+  document.getElementById('hudGpuBar').style.width = gpu + '%';
+  document.getElementById('hudCpu').textContent = Math.round(cpu);
+  document.getElementById('hudCpuBar').style.width = cpu + '%';
+  document.getElementById('hudVram').textContent = vram.toFixed(1);
+  document.getElementById('hudVramBar').style.width = (vram / 16 * 100) + '%';
+  const hudTemp = document.getElementById('hudTemp');
+  hudTemp.textContent = Math.round(temp);
+  hudTemp.className = 'hValue' + (temp > 80 ? ' bad' : temp > 70 ? ' warn' : '');
+  updateChart();
+
+  // Update app panels
+  document.getElementById('dashTemp').textContent = Math.round(temp) + '°C';
+  document.getElementById('dashGpuUtil').textContent = Math.round(gpu) + '%';
+  document.getElementById('dashVram').textContent = vram.toFixed(1) + ' GB';
+  document.getElementById('dashCpuUtil').textContent = Math.round(cpu) + '%';
+  document.getElementById('perfFps').textContent = Math.round(fps);
+  document.getElementById('perfFrameTime').textContent = frameTime.toFixed(1) + ' ms';
+  document.getElementById('perfGpu').textContent = Math.round(gpu) + '%';
+  document.getElementById('perfCpu').textContent = Math.round(cpu) + '%';
+  document.getElementById('perfTemp').textContent = Math.round(temp) + '°C';
+  document.getElementById('perfPower').textContent = nvState.power + ' W';
+}
+
+setInterval(nvSimLoop, 250);
+nvSimLoop();
+
+/* ═══════════════════════════════════════════════════════════════
+   FIGHTER JET GAME (2D Canvas — original SKY STRIKE engine)
+   ═══════════════════════════════════════════════════════════════ */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H, cx, cy;
-
 let touchCapable = false;
 
 function resize() {
@@ -31,7 +535,6 @@ function resize() {
 
 const F = 600;
 
-// ================== STATE ==================
 let state = 'intro';
 let score = 0, health = 100, kills = 0, wave = 1;
 let bombs = 5, maxBombs = 5;
@@ -42,9 +545,8 @@ let keys = {};
 let lastTime = 0, gameTime = 0;
 let spawnTimer = 0, fireCooldown = 0, bombCooldown = 0;
 let shake = 0, flash = 0;
-let highScore = parseInt(localStorage.getItem('skyStrikeHigh') || '0');
+let highScore = parseInt(localStorage.getItem('skyStrikeNVHigh') || '0');
 
-// ================== TOUCH BUTTONS ==================
 const touchButtons = {
   fire: { x: 0, y: 0, r: 0, pressed: false },
   bomb: { x: 0, y: 0, r: 0, pressed: false }
@@ -55,7 +557,6 @@ function updateTouchButtonPositions() {
   touchButtons.fire.r = btnR;
   touchButtons.fire.x = W - btnR - 25;
   touchButtons.fire.y = H - btnR - 25;
-
   touchButtons.bomb.r = btnR;
   touchButtons.bomb.x = btnR + 25;
   touchButtons.bomb.y = H - btnR - 25;
@@ -65,7 +566,6 @@ function isPointInButton(px, py, btn) {
   return Math.hypot(px - btn.x, py - btn.y) < btn.r * 1.25;
 }
 
-// ================== CLOUDS ==================
 function initClouds() {
   clouds = [];
   for (let i = 0; i < 30; i++) {
@@ -80,27 +580,17 @@ function initClouds() {
 }
 
 function resetPosition() {
-  crosshair.x = W / 2;
-  crosshair.y = H / 2;
-  mouseX = W / 2;
-  mouseY = H / 2;
+  crosshair.x = W / 2; crosshair.y = H / 2;
+  mouseX = W / 2; mouseY = H / 2;
 }
 
-window.addEventListener('resize', () => {
-  resize();
-  initClouds();
-});
-resize();
-initClouds();
-updateTouchButtonPositions();
-resetPosition();
+window.addEventListener('resize', () => { resize(); initClouds(); });
+resize(); initClouds(); updateTouchButtonPositions(); resetPosition();
 
-// ================== AUDIO ==================
+/* Audio */
 let audioCtx = null;
 function initAudio() {
-  if (!audioCtx) {
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
-  }
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
 }
 function playShoot() {
   if (!audioCtx) return;
@@ -120,26 +610,20 @@ function playBoom() {
   const buf = audioCtx.createBuffer(1, bs, audioCtx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < bs; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bs, 2);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  const g = audioCtx.createGain();
-  g.gain.value = 0.25;
-  src.connect(g); g.connect(audioCtx.destination);
-  src.start();
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const g = audioCtx.createGain(); g.gain.value = 0.25;
+  src.connect(g); g.connect(audioCtx.destination); src.start();
 }
 function playHit() {
   if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.value = 120;
+  const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+  osc.type = 'sawtooth'; osc.frequency.value = 120;
   g.gain.setValueAtTime(0.08, audioCtx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
   osc.connect(g); g.connect(audioCtx.destination);
   osc.start(); osc.stop(audioCtx.currentTime + 0.2);
 }
 
-// ================== GAME FLOW ==================
 function startGame() {
   initAudio();
   state = 'playing';
@@ -156,11 +640,11 @@ function gameOver() {
   state = 'over';
   if (score > highScore) {
     highScore = score;
-    localStorage.setItem('skyStrikeHigh', highScore);
+    localStorage.setItem('skyStrikeNVHigh', highScore);
   }
 }
 
-// ================== INPUT — KEYBOARD ==================
+/* Input */
 window.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === ' ') {
@@ -170,91 +654,52 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 
-// ================== INPUT — MOUSE ==================
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mouseX = e.clientX - r.left;
   mouseY = e.clientY - r.top;
 });
-
 canvas.addEventListener('mousedown', e => {
   if (e.button === 0 && state === 'playing') dropBomb();
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// ================== INPUT — TOUCH ==================
 function handleTouchStart(e) {
-  e.preventDefault();
-  initAudio();
-
-  if (state === 'intro' || state === 'over') {
-    startGame();
-    return;
-  }
-
+  e.preventDefault(); initAudio();
+  if (state === 'intro' || state === 'over') { startGame(); return; }
   if (state !== 'playing') return;
-
   for (const touch of e.changedTouches) {
     const r = canvas.getBoundingClientRect();
-    const tx = touch.clientX - r.left;
-    const ty = touch.clientY - r.top;
-
-    if (isPointInButton(tx, ty, touchButtons.bomb)) {
-      touchButtons.bomb.pressed = true;
-      dropBomb();
-      continue;
-    }
-
-    if (isPointInButton(tx, ty, touchButtons.fire)) {
-      touchButtons.fire.pressed = true;
-      continue;
-    }
-
-    mouseX = tx;
-    mouseY = ty;
+    const tx = touch.clientX - r.left, ty = touch.clientY - r.top;
+    if (isPointInButton(tx, ty, touchButtons.bomb)) { touchButtons.bomb.pressed = true; dropBomb(); continue; }
+    if (isPointInButton(tx, ty, touchButtons.fire)) { touchButtons.fire.pressed = true; continue; }
+    mouseX = tx; mouseY = ty;
   }
 }
-
 function handleTouchMove(e) {
   e.preventDefault();
   if (state !== 'playing') return;
-
   for (const touch of e.changedTouches) {
     const r = canvas.getBoundingClientRect();
-    const tx = touch.clientX - r.left;
-    const ty = touch.clientY - r.top;
-
+    const tx = touch.clientX - r.left, ty = touch.clientY - r.top;
     if (isPointInButton(tx, ty, touchButtons.bomb)) continue;
-
-    if (!isPointInButton(tx, ty, touchButtons.fire)) {
-      mouseX = tx;
-      mouseY = ty;
-    }
+    if (!isPointInButton(tx, ty, touchButtons.fire)) { mouseX = tx; mouseY = ty; }
   }
 }
-
 function handleTouchEnd(e) {
   e.preventDefault();
   for (const touch of e.changedTouches) {
     const r = canvas.getBoundingClientRect();
-    const tx = touch.clientX - r.left;
-    const ty = touch.clientY - r.top;
-
-    if (isPointInButton(tx, ty, touchButtons.fire)) {
-      touchButtons.fire.pressed = false;
-    }
-    if (isPointInButton(tx, ty, touchButtons.bomb)) {
-      touchButtons.bomb.pressed = false;
-    }
+    const tx = touch.clientX - r.left, ty = touch.clientY - r.top;
+    if (isPointInButton(tx, ty, touchButtons.fire)) touchButtons.fire.pressed = false;
+    if (isPointInButton(tx, ty, touchButtons.bomb)) touchButtons.bomb.pressed = false;
   }
 }
-
 canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
 canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-// ================== SPAWN ==================
 function spawnEnemy() {
   const diff = 1 + gameTime / 25;
   enemies.push({
@@ -265,12 +710,10 @@ function spawnEnemy() {
     hp: Math.random() < 0.2 ? 3 : (Math.random() < 0.5 ? 2 : 1),
     bank: (Math.random() - 0.5) * 0.6,
     bobPhase: Math.random() * Math.PI * 2,
-    hitFlash: 0,
-    dead: false
+    hitFlash: 0, dead: false
   });
 }
 
-// ================== ACTIONS ==================
 function fire() {
   let best = null, bestDist = 70;
   for (const e of enemies) {
@@ -280,53 +723,29 @@ function fire() {
     const d = Math.hypot(sx - crosshair.x, sy - crosshair.y);
     if (d < bestDist) { bestDist = d; best = e; }
   }
-
   let tx = crosshair.x, ty = crosshair.y;
   if (best) {
     tx = cx + (best.x * F) / best.z;
     ty = cy + (best.y * F) / best.z;
-    best.hp -= 1;
-    best.hitFlash = 0.15;
+    best.hp -= 1; best.hitFlash = 0.15;
     for (let i = 0; i < 4; i++) {
       const a = Math.random() * Math.PI * 2;
-      particles.push({
-        x: tx, y: ty,
-        vx: Math.cos(a) * 80, vy: Math.sin(a) * 80,
-        life: 0.2, maxLife: 0.2,
-        size: 2, color: '#ffff88'
-      });
+      particles.push({ x: tx, y: ty, vx: Math.cos(a) * 80, vy: Math.sin(a) * 80, life: 0.2, maxLife: 0.2, size: 2, color: '#ffff88' });
     }
     if (best.hp <= 0) {
       createExplosion(tx, ty, 25 + 4000 / best.z);
-      best.dead = true;
-      score += 100;
-      kills++;
+      best.dead = true; score += 100; kills++;
       shake = Math.max(shake, 5);
     }
   }
-
-  bullets.push({
-    x1: cx + (Math.random() - 0.5) * 20,
-    y1: H - 20,
-    x2: tx, y2: ty,
-    t: 0, life: 0.09
-  });
-
+  bullets.push({ x1: cx + (Math.random() - 0.5) * 20, y1: H - 20, x2: tx, y2: ty, t: 0, life: 0.09 });
   playShoot();
 }
 
 function dropBomb() {
   if (bombs <= 0 || bombCooldown > 0) return;
-  bombs--;
-  bombCooldown = 0.5;
-  bombs_proj.push({
-    x1: cx,
-    y1: H - 20,
-    x2: crosshair.x,
-    y2: crosshair.y,
-    t: 0,
-    duration: 0.22
-  });
+  bombs--; bombCooldown = 0.5;
+  bombs_proj.push({ x1: cx, y1: H - 20, x2: crosshair.x, y2: crosshair.y, t: 0, duration: 0.22 });
 }
 
 function createExplosion(x, y, size) {
@@ -335,41 +754,27 @@ function createExplosion(x, y, size) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 60 + Math.random() * size * 2.5;
-    particles.push({
-      x, y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
-      life: 0.4 + Math.random() * 0.5,
-      maxLife: 0.4 + Math.random() * 0.5,
-      size: 2 + Math.random() * 4,
-      color: ['#ffaa33', '#ff5533', '#ffff88', '#ff8800'][Math.floor(Math.random() * 4)]
-    });
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.4 + Math.random() * 0.5, maxLife: 0.4 + Math.random() * 0.5, size: 2 + Math.random() * 4, color: ['#ffaa33', '#ff5533', '#ffff88', '#ff8800'][Math.floor(Math.random() * 4)] });
   }
   playBoom();
 }
 
-// ================== UPDATE ==================
 function update(dt) {
   for (const c of clouds) {
     c.x -= c.speed * dt;
-    if (c.x + c.r < 0) {
-      c.x = W + c.r;
-      c.y = Math.random() * H * 0.65;
-    }
+    if (c.x + c.r < 0) { c.x = W + c.r; c.y = Math.random() * H * 0.65; }
   }
-
   if (state !== 'playing') return;
-
   gameTime += dt;
   shake = Math.max(0, shake - dt * 40);
   flash = Math.max(0, flash - dt * 2);
-  fireCooldown -= dt;
-  bombCooldown -= dt;
-
+  fireCooldown -= dt; bombCooldown -= dt;
   wave = 1 + Math.floor(gameTime / 20);
-
   crosshair.x += (mouseX - crosshair.x) * Math.min(1, dt * 30);
   crosshair.y += (mouseY - crosshair.y) * Math.min(1, dt * 30);
+
+  // Update NVIDIA telemetry load factor based on game intensity
+  gameLoadFactor = Math.min(1, 0.35 + enemies.length * 0.06 + explosions.length * 0.08);
 
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
@@ -377,12 +782,8 @@ function update(dt) {
     const rate = Math.max(0.25, 0.9 - wave * 0.05);
     spawnTimer = rate + Math.random() * 0.3;
   }
-
   const fireHeld = keys[' '] || touchButtons.fire.pressed;
-  if (fireHeld && fireCooldown <= 0) {
-    fire();
-    fireCooldown = 0.11;
-  }
+  if (fireHeld && fireCooldown <= 0) { fire(); fireCooldown = 0.11; }
 
   for (const e of enemies) {
     e.z -= e.speed * dt;
@@ -390,16 +791,13 @@ function update(dt) {
     e.y += Math.sin(e.bobPhase) * 30 * dt;
     e.hitFlash = Math.max(0, e.hitFlash - dt * 5);
     if (e.z < 40) {
-      e.dead = true;
-      health -= 15;
-      shake = Math.max(shake, 18);
-      flash = Math.max(flash, 0.4);
+      e.dead = true; health -= 15;
+      shake = Math.max(shake, 18); flash = Math.max(flash, 0.4);
       playHit();
       if (health <= 0) { health = 0; gameOver(); }
     }
   }
   enemies = enemies.filter(e => !e.dead);
-
   for (const b of bullets) b.t += dt;
   bullets = bullets.filter(b => b.t < b.life);
 
@@ -408,186 +806,121 @@ function update(dt) {
     if (bp.t >= bp.duration) {
       const sz = 130;
       createExplosion(bp.x2, bp.y2, sz);
-      shake = Math.max(shake, 22);
-      flash = Math.max(flash, 0.5);
+      shake = Math.max(shake, 22); flash = Math.max(flash, 0.5);
       for (const e of enemies) {
         const sx = cx + (e.x * F) / e.z;
         const sy = cy + (e.y * F) / e.z;
         if (Math.hypot(sx - bp.x2, sy - bp.y2) < sz) {
           createExplosion(sx, sy, 20);
-          e.dead = true;
-          score += 100;
-          kills++;
+          e.dead = true; score += 100; kills++;
         }
       }
     }
   }
   bombs_proj = bombs_proj.filter(bp => bp.t < bp.duration);
-
   for (const ex of explosions) ex.t += dt;
   explosions = explosions.filter(ex => ex.t < ex.maxT);
-
   for (const p of particles) {
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vx *= 0.95;
-    p.vy *= 0.95;
-    p.life -= dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.95; p.vy *= 0.95; p.life -= dt;
   }
   particles = particles.filter(p => p.life > 0);
 }
 
-// ================== RENDER ==================
+/* Render — cockpit game (original SKY STRIKE visuals) */
 function render() {
   ctx.save();
-  if (shake > 0.3) {
-    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-  }
-
-  drawSky();
-  drawClouds();
-
+  if (shake > 0.3) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  drawSky(); drawClouds();
   if (state !== 'intro') {
     const sorted = [...enemies].sort((a, b) => b.z - a.z);
     for (const e of sorted) drawEnemy(e);
-    drawBullets();
-    drawBombs();
-    drawExplosions();
-    drawParticles();
+    drawBullets(); drawBombs(); drawExplosions(); drawParticles();
   }
-
   drawCockpit();
-  if (state === 'playing') {
-    drawHUD();
-    drawCrosshair();
-    drawTouchControls();
-  }
-
+  if (state === 'playing') { drawHUD(); drawCrosshair(); drawTouchControls(); }
   ctx.restore();
-
-  if (flash > 0) {
-    ctx.fillStyle = `rgba(255, 220, 150, ${flash * 0.35})`;
-    ctx.fillRect(0, 0, W, H);
-  }
-
+  if (flash > 0) { ctx.fillStyle = `rgba(255, 220, 150, ${flash * 0.35})`; ctx.fillRect(0, 0, W, H); }
   const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.25, cx, cy, Math.max(W, H) * 0.75);
   vg.addColorStop(0, 'rgba(0,0,0,0)');
   vg.addColorStop(1, 'rgba(0,0,0,0.65)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
-
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   if (state === 'intro') drawIntro();
   if (state === 'over') drawGameOver();
 }
 
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#061e3a');
-  g.addColorStop(0.3, '#1e5090');
-  g.addColorStop(0.6, '#4a90c8');
-  g.addColorStop(0.85, '#8ac0dd');
-  g.addColorStop(1, '#c8e0ee');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-
+  g.addColorStop(0, '#061e3a'); g.addColorStop(0.3, '#1e5090');
+  g.addColorStop(0.6, '#4a90c8'); g.addColorStop(0.85, '#8ac0dd'); g.addColorStop(1, '#c8e0ee');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   const sunX = W * 0.72, sunY = H * 0.18;
   const sg = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 280);
   sg.addColorStop(0, 'rgba(255, 240, 200, 0.35)');
   sg.addColorStop(1, 'rgba(255, 240, 200, 0)');
-  ctx.fillStyle = sg;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
 }
-
 function drawClouds() {
   for (const c of clouds) {
     const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
     g.addColorStop(0, `rgba(255,255,255,${c.alpha})`);
     g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
   }
 }
-
 function drawEnemy(e) {
   const sx = cx + (e.x * F) / e.z;
   const sy = cy + (e.y * F) / e.z;
   const size = (F / e.z) * 25;
   if (size < 1 || e.z < 5) return;
   if (sx < -300 || sx > W + 300 || sy < -300 || sy > H + 300) return;
-
-  ctx.save();
-  ctx.translate(sx, sy);
-  ctx.rotate(e.bank * 0.4);
-
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(e.bank * 0.4);
   const f = e.hitFlash;
   const body = f > 0 ? '#ff6644' : '#2c3240';
   const wing = f > 0 ? '#cc3322' : '#1a1e26';
   const dark = f > 0 ? '#993300' : '#0d1015';
-
   ctx.fillStyle = wing;
   ctx.beginPath();
-  ctx.moveTo(-size * 0.1, -size * 0.1);
-  ctx.lineTo(-size * 0.9, size * 0.2);
-  ctx.lineTo(-size * 0.75, size * 0.4);
-  ctx.lineTo(-size * 0.1, size * 0.3);
+  ctx.moveTo(-size * 0.1, -size * 0.1); ctx.lineTo(-size * 0.9, size * 0.2);
+  ctx.lineTo(-size * 0.75, size * 0.4); ctx.lineTo(-size * 0.1, size * 0.3);
   ctx.closePath(); ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(size * 0.1, -size * 0.1);
-  ctx.lineTo(size * 0.9, size * 0.2);
-  ctx.lineTo(size * 0.75, size * 0.4);
-  ctx.lineTo(size * 0.1, size * 0.3);
+  ctx.moveTo(size * 0.1, -size * 0.1); ctx.lineTo(size * 0.9, size * 0.2);
+  ctx.lineTo(size * 0.75, size * 0.4); ctx.lineTo(size * 0.1, size * 0.3);
   ctx.closePath(); ctx.fill();
-
   ctx.fillStyle = dark;
   ctx.beginPath();
-  ctx.moveTo(-size * 0.35, size * 0.5);
-  ctx.lineTo(0, size * 0.3);
-  ctx.lineTo(size * 0.35, size * 0.5);
-  ctx.lineTo(size * 0.3, size * 0.75);
+  ctx.moveTo(-size * 0.35, size * 0.5); ctx.lineTo(0, size * 0.3);
+  ctx.lineTo(size * 0.35, size * 0.5); ctx.lineTo(size * 0.3, size * 0.75);
   ctx.lineTo(-size * 0.3, size * 0.75);
   ctx.closePath(); ctx.fill();
-
   ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.85);
-  ctx.lineTo(size * 0.14, -size * 0.1);
-  ctx.lineTo(size * 0.1, size * 0.55);
-  ctx.lineTo(-size * 0.1, size * 0.55);
+  ctx.moveTo(0, -size * 0.85); ctx.lineTo(size * 0.14, -size * 0.1);
+  ctx.lineTo(size * 0.1, size * 0.55); ctx.lineTo(-size * 0.1, size * 0.55);
   ctx.lineTo(-size * 0.14, -size * 0.1);
   ctx.closePath(); ctx.fill();
-
   const cg = ctx.createLinearGradient(-size * 0.08, -size * 0.4, size * 0.08, -size * 0.2);
   cg.addColorStop(0, f > 0 ? '#ffff88' : '#88ccff');
   cg.addColorStop(1, f > 0 ? '#ffaa00' : '#335588');
   ctx.fillStyle = cg;
-  ctx.beginPath();
-  ctx.ellipse(0, -size * 0.35, size * 0.09, size * 0.18, 0, 0, Math.PI * 2);
-  ctx.fill();
-
+  ctx.beginPath(); ctx.ellipse(0, -size * 0.35, size * 0.09, size * 0.18, 0, 0, Math.PI * 2); ctx.fill();
   if (size > 5) {
     const eg = ctx.createRadialGradient(0, size * 0.6, 0, 0, size * 0.6, size * 0.25);
     eg.addColorStop(0, 'rgba(255,200,100,0.9)');
     eg.addColorStop(1, 'rgba(255,100,0,0)');
     ctx.fillStyle = eg;
-    ctx.beginPath();
-    ctx.arc(0, size * 0.6, size * 0.25, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, size * 0.6, size * 0.25, 0, Math.PI * 2); ctx.fill();
   }
-
   if (size > 14 && e.hp > 1) {
     ctx.fillStyle = '#ff3344';
     for (let i = 0; i < e.hp; i++) {
-      ctx.beginPath();
-      ctx.arc(-10 + i * 10, -size * 0.95, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(-10 + i * 10, -size * 0.95, 3, 0, Math.PI * 2); ctx.fill();
     }
   }
-
   ctx.restore();
 }
-
 function drawBullets() {
   for (const b of bullets) {
     const p = b.t / b.life;
@@ -596,60 +929,37 @@ function drawBullets() {
     const tp = Math.max(0, p - 0.3);
     const tx = b.x1 + (b.x2 - b.x1) * tp;
     const ty = b.y1 + (b.y2 - b.y1) * tp;
-
     ctx.strokeStyle = `rgba(255, 240, 150, ${1 - p})`;
     ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
     ctx.fillStyle = `rgba(255, 255, 220, ${1 - p})`;
-    ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
   }
 }
-
 function drawBombs() {
   for (const bp of bombs_proj) {
     const p = bp.t / bp.duration;
     const x = bp.x1 + (bp.x2 - bp.x1) * p;
     const y = bp.y1 + (bp.y2 - bp.y1) * p;
-
     for (let i = 1; i <= 5; i++) {
       const tp = Math.max(0, p - i * 0.06);
       const tx = bp.x1 + (bp.x2 - bp.x1) * tp;
       const ty = bp.y1 + (bp.y2 - bp.y1) * tp;
       ctx.fillStyle = `rgba(200, 200, 200, ${0.4 * (1 - i / 6)})`;
-      ctx.beginPath();
-      ctx.arc(tx, ty, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(tx, ty, 3, 0, Math.PI * 2); ctx.fill();
     }
-
-    ctx.save();
-    ctx.translate(x, y);
-    const ang = Math.atan2(bp.y2 - bp.y1, bp.x2 - bp.x1);
-    ctx.rotate(ang);
+    ctx.save(); ctx.translate(x, y);
+    ctx.rotate(Math.atan2(bp.y2 - bp.y1, bp.x2 - bp.x1));
     ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 6, 12, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#666';
-    ctx.beginPath();
-    ctx.moveTo(-5, -10); ctx.lineTo(5, -10);
-    ctx.lineTo(4, -15); ctx.lineTo(-4, -15);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#cc3322';
-    ctx.fillRect(-7, 6, 14, 3);
+    ctx.beginPath(); ctx.moveTo(-5, -10); ctx.lineTo(5, -10); ctx.lineTo(4, -15); ctx.lineTo(-4, -15); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#cc3322'; ctx.fillRect(-7, 6, 14, 3);
     ctx.fillStyle = 'rgba(255, 200, 100, 0.7)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 }
-
 function drawExplosions() {
   for (const ex of explosions) {
     const p = ex.t / ex.maxT;
@@ -661,42 +971,25 @@ function drawExplosions() {
     g.addColorStop(0.55, `rgba(255, 100, 30, ${a * 0.75})`);
     g.addColorStop(1, 'rgba(150, 30, 0, 0)');
     ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2); ctx.fill();
   }
 }
-
 function drawParticles() {
   for (const p of particles) {
     const a = p.life / p.maxLife;
-    ctx.globalAlpha = a;
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2);
-    ctx.fill();
+    ctx.globalAlpha = a; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + a * 0.5), 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
-
 function drawCrosshair() {
-  const x = crosshair.x, y = crosshair.y;
-  const r = 20;
-
+  const x = crosshair.x, y = crosshair.y, r = 20;
   const g = ctx.createRadialGradient(x, y, 0, x, y, r + 10);
   g.addColorStop(0, 'rgba(120, 255, 160, 0.15)');
   g.addColorStop(1, 'rgba(120, 255, 160, 0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r + 10, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(120, 255, 160, 0.9)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r + 10, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 255, 160, 0.9)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
   const b = 8;
   for (const [dx, dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
     ctx.beginPath();
@@ -705,12 +998,8 @@ function drawCrosshair() {
     ctx.lineTo(x + dx * r, y + dy * (r - b));
     ctx.stroke();
   }
-
   ctx.fillStyle = 'rgba(120, 255, 160, 0.9)';
-  ctx.beginPath();
-  ctx.arc(x, y, 2, 0, Math.PI * 2);
-  ctx.fill();
-
+  ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(120, 255, 160, 0.5)';
   ctx.beginPath();
   ctx.moveTo(x - r - 12, y); ctx.lineTo(x - r - 3, y);
@@ -719,326 +1008,179 @@ function drawCrosshair() {
   ctx.moveTo(x, y + r + 3); ctx.lineTo(x, y + r + 12);
   ctx.stroke();
 }
-
 function drawCockpit() {
   const dashTop = H * 0.78;
-
   const g = ctx.createLinearGradient(0, dashTop, 0, H);
-  g.addColorStop(0, '#1a1e26');
-  g.addColorStop(1, '#05070a');
+  g.addColorStop(0, '#1a1e26'); g.addColorStop(1, '#05070a');
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(0, H);
-  ctx.lineTo(0, dashTop + 30);
+  ctx.moveTo(0, H); ctx.lineTo(0, dashTop + 30);
   ctx.quadraticCurveTo(W * 0.5, dashTop - 60, W, dashTop + 30);
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = '#0a0d12';
-  ctx.lineWidth = 26;
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#0a0d12'; ctx.lineWidth = 26;
   ctx.beginPath();
-  ctx.moveTo(-20, -20);
-  ctx.lineTo(W * 0.06, H * 0.14);
+  ctx.moveTo(-20, -20); ctx.lineTo(W * 0.06, H * 0.14);
   ctx.quadraticCurveTo(W * 0.5, H * 0.03, W * 0.94, H * 0.14);
-  ctx.lineTo(W + 20, -20);
-  ctx.stroke();
-
+  ctx.lineTo(W + 20, -20); ctx.stroke();
   ctx.fillStyle = '#0a0d12';
   ctx.beginPath();
-  ctx.moveTo(-20, -20);
-  ctx.lineTo(W * 0.06, H * 0.14);
-  ctx.lineTo(W * 0.04, H * 0.82);
-  ctx.lineTo(-20, H + 20);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(-20, -20); ctx.lineTo(W * 0.06, H * 0.14);
+  ctx.lineTo(W * 0.04, H * 0.82); ctx.lineTo(-20, H + 20); ctx.closePath(); ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(W + 20, -20);
-  ctx.lineTo(W * 0.94, H * 0.14);
-  ctx.lineTo(W * 0.96, H * 0.82);
-  ctx.lineTo(W + 20, H + 20);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(120, 255, 160, 0.3)';
-  ctx.lineWidth = 1;
+  ctx.moveTo(W + 20, -20); ctx.lineTo(W * 0.94, H * 0.14);
+  ctx.lineTo(W * 0.96, H * 0.82); ctx.lineTo(W + 20, H + 20); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 255, 160, 0.3)'; ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, dashTop + 30);
   ctx.quadraticCurveTo(W * 0.5, dashTop - 60, W, dashTop + 30);
   ctx.stroke();
-
-  const panelY = H - 80;
-
-  ctx.fillStyle = '#0d1015';
-  ctx.beginPath();
-  ctx.roundRect(W * 0.08, panelY, 160, 55, 6);
-  ctx.fill();
-  ctx.strokeStyle = '#2a3a4a';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = '#0d1015';
-  ctx.beginPath();
-  ctx.roundRect(W * 0.5 - 160, panelY + 5, 320, 45, 6);
-  ctx.fill();
-  ctx.strokeStyle = '#2a3a4a';
-  ctx.stroke();
-
-  ctx.fillStyle = '#0d1015';
-  ctx.beginPath();
-  ctx.roundRect(W - W * 0.08 - 160, panelY, 160, 55, 6);
-  ctx.fill();
-  ctx.strokeStyle = '#2a3a4a';
-  ctx.stroke();
-
-  ctx.save();
-  ctx.translate(W * 0.5, panelY + 27);
-  ctx.beginPath();
-  ctx.arc(0, 0, 18, 0, Math.PI * 2);
-  ctx.fillStyle = '#0a1a2a';
-  ctx.fill();
-  ctx.strokeStyle = '#2a5a7a';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-14, 0); ctx.lineTo(14, 0);
-  ctx.strokeStyle = '#4a9a6a';
-  ctx.stroke();
-  ctx.restore();
 }
-
 function drawHUD() {
-  const hx = 20, hy = 20;
-  const scale = Math.min(W, H) / 800;
+  const hx = 20, hy = 20, scale = Math.min(W, H) / 800;
   const baseFont = Math.max(10, 12 * scale);
-
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-  ctx.beginPath();
-  ctx.roundRect(hx - 10, hy - 10, Math.max(180, 220 * scale), Math.max(75, 85 * scale), 6);
-  ctx.fill();
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${baseFont}px monospace`;
-  ctx.textAlign = 'left';
+  ctx.beginPath(); ctx.roundRect(hx - 10, hy - 10, Math.max(180, 220 * scale), Math.max(75, 85 * scale), 6); ctx.fill();
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${baseFont}px monospace`; ctx.textAlign = 'left';
   ctx.fillText('HULL INTEGRITY', hx, hy + 8 * scale);
-
   const bw = Math.max(140, 190 * scale), bh = Math.max(10, 12 * scale);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(hx, hy + 20 * scale, bw, bh);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(hx, hy + 20 * scale, bw, bh);
   const hc = health > 60 ? '#4aff7a' : (health > 30 ? '#ffaa33' : '#ff3344');
-  ctx.fillStyle = hc;
-  ctx.fillRect(hx, hy + 20 * scale, bw * (health / 100), bh);
-  ctx.strokeStyle = '#5a9a6a';
-  ctx.strokeRect(hx, hy + 20 * scale, bw, bh);
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.fillText(health + '%', hx + bw + 10 * scale, hy + 31 * scale);
+  ctx.fillStyle = hc; ctx.fillRect(hx, hy + 20 * scale, bw * (health / 100), bh);
+  ctx.strokeStyle = '#5a9a6a'; ctx.strokeRect(hx, hy + 20 * scale, bw, bh);
+  ctx.fillStyle = '#5a9a6a'; ctx.fillText(health + '%', hx + bw + 10 * scale, hy + 31 * scale);
 
   ctx.textAlign = 'right';
   const sxp = W - 20;
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-  ctx.beginPath();
-  ctx.roundRect(sxp - Math.max(170, 210 * scale), 15, Math.max(170, 210 * scale), Math.max(85, 100 * scale), 6);
-  ctx.fill();
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${baseFont}px monospace`;
+  ctx.beginPath(); ctx.roundRect(sxp - Math.max(170, 210 * scale), 15, Math.max(170, 210 * scale), Math.max(85, 100 * scale), 6); ctx.fill();
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${baseFont}px monospace`;
   ctx.fillText('SCORE', sxp, 35 * scale);
-
-  ctx.fillStyle = '#aaffaa';
-  ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
+  ctx.fillStyle = '#aaffaa'; ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
   ctx.fillText(score.toString().padStart(6, '0'), sxp, 65 * scale);
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${Math.max(9, 10 * scale)}px monospace`;
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${Math.max(9, 10 * scale)}px monospace`;
   ctx.fillText('HIGH: ' + highScore.toString().padStart(6, '0'), sxp, 85 * scale);
-  ctx.fillStyle = '#aaff88';
-  ctx.fillText('WAVE ' + wave, sxp, 102 * scale);
+  ctx.fillStyle = '#aaff88'; ctx.fillText('WAVE ' + wave, sxp, 102 * scale);
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${baseFont}px monospace`;
+  ctx.textAlign = 'left'; ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${baseFont}px monospace`;
   const bombStartY = touchCapable ? H - Math.max(45, Math.min(W, H) * 0.09) - 35 : H - 140;
   const bombStartX = touchCapable ? 20 : 40;
   ctx.fillText('BOMBS', bombStartX, bombStartY);
-
   const bombScale = Math.min(W, H) / 800;
   const bombSpacing = Math.max(20, 26 * bombScale);
   for (let i = 0; i < maxBombs; i++) {
-    const bx = bombStartX + i * bombSpacing;
-    const by = bombStartY + 22;
+    const bx = bombStartX + i * bombSpacing, by = bombStartY + 22;
     if (i < bombs) {
       ctx.fillStyle = '#ffaa33';
-      ctx.beginPath();
-      ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#cc5522';
-      ctx.fillRect(bx, by + 3, 12, 2);
+      ctx.beginPath(); ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#cc5522'; ctx.fillRect(bx, by + 3, 12, 2);
     } else {
-      ctx.strokeStyle = '#3a5a4a';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeStyle = '#3a5a4a'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(bx + 6, by + 8, 4, 8, 0, 0, Math.PI * 2); ctx.stroke();
     }
   }
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${baseFont}px monospace`;
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${baseFont}px monospace`;
   ctx.fillText('KILLS: ' + kills, bombStartX, bombStartY + 55);
 }
-
 function drawTouchControls() {
   if (!touchCapable) return;
-
   const btn = touchButtons.fire;
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
   const fg = ctx.createRadialGradient(btn.x, btn.y, 0, btn.x, btn.y, btn.r);
   fg.addColorStop(0, btn.pressed ? 'rgba(255, 160, 60, 0.8)' : 'rgba(90, 180, 110, 0.25)');
   fg.addColorStop(1, btn.pressed ? 'rgba(255, 120, 20, 0.4)' : 'rgba(90, 180, 110, 0.08)');
-  ctx.fillStyle = fg;
-  ctx.fill();
+  ctx.fillStyle = fg; ctx.fill();
   ctx.strokeStyle = btn.pressed ? '#ffaa33' : 'rgba(120, 255, 160, 0.7)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.strokeStyle = btn.pressed ? '#fff' : 'rgba(160, 255, 180, 0.9)';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = btn.pressed ? '#fff' : 'rgba(160, 255, 180, 0.9)'; ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(btn.x - btn.r * 0.4, btn.y);
-  ctx.lineTo(btn.x + btn.r * 0.4, btn.y);
-  ctx.moveTo(btn.x, btn.y - btn.r * 0.4);
-  ctx.lineTo(btn.x, btn.y + btn.r * 0.4);
+  ctx.moveTo(btn.x - btn.r * 0.4, btn.y); ctx.lineTo(btn.x + btn.r * 0.4, btn.y);
+  ctx.moveTo(btn.x, btn.y - btn.r * 0.4); ctx.lineTo(btn.x, btn.y + btn.r * 0.4);
   ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(btn.x, btn.y, btn.r * 0.2, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.beginPath(); ctx.arc(btn.x, btn.y, btn.r * 0.2, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 
   const bb = touchButtons.bomb;
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(bb.x, bb.y, bb.r, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(bb.x, bb.y, bb.r, 0, Math.PI * 2);
   const bg = ctx.createRadialGradient(bb.x, bb.y, 0, bb.x, bb.y, bb.r);
   bg.addColorStop(0, bb.pressed ? 'rgba(255, 160, 60, 0.8)' : 'rgba(180, 120, 90, 0.25)');
   bg.addColorStop(1, bb.pressed ? 'rgba(255, 120, 20, 0.4)' : 'rgba(180, 120, 90, 0.08)');
-  ctx.fillStyle = bg;
-  ctx.fill();
+  ctx.fillStyle = bg; ctx.fill();
   ctx.strokeStyle = bb.pressed ? '#ffaa33' : 'rgba(255, 180, 120, 0.7)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
+  ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = bb.pressed ? '#fff' : 'rgba(255, 200, 140, 0.9)';
-  ctx.beginPath();
-  ctx.ellipse(bb.x, bb.y + bb.r * 0.1, bb.r * 0.25, bb.r * 0.35, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.ellipse(bb.x, bb.y + bb.r * 0.1, bb.r * 0.25, bb.r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = bb.pressed ? '#fff' : 'rgba(255, 200, 140, 0.7)';
   ctx.fillRect(bb.x - bb.r * 0.25, bb.y - bb.r * 0.15, bb.r * 0.5, bb.r * 0.12);
   ctx.restore();
 }
-
 function drawIntro() {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-  ctx.fillRect(0, 0, W, H);
-
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'; ctx.fillRect(0, 0, W, H);
   const scale = Math.min(W, H) / 800;
   const bigFont = Math.max(34, Math.min(72, W * 0.1));
-
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#aaffaa';
-  ctx.font = `bold ${bigFont}px monospace`;
-  ctx.shadowColor = '#4aff7a';
-  ctx.shadowBlur = 20;
-  ctx.fillText('SKY STRIKE', W / 2, H * 0.22);
-  ctx.shadowBlur = 0;
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `bold ${Math.max(11, 16 * scale)}px monospace`;
-  ctx.fillText('C O C K P I T   C O M B A T', W / 2, H * 0.22 + bigFont * 0.45);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `${Math.max(13, 18 * scale)}px monospace`;
+  ctx.fillStyle = '#aaffaa'; ctx.font = `bold ${bigFont}px monospace`;
+  ctx.shadowColor = '#4aff7a'; ctx.shadowBlur = 20;
+  ctx.fillText('SKY STRIKE', W / 2, H * 0.22); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `bold ${Math.max(11, 16 * scale)}px monospace`;
+  ctx.fillText('N V I D I A   A P P   E D I T I O N', W / 2, H * 0.22 + bigFont * 0.45);
+  ctx.fillStyle = '#ffffff'; ctx.font = `${Math.max(13, 18 * scale)}px monospace`;
   if (touchCapable) {
     ctx.fillText('TAP  —  START GAME', W / 2, H * 0.42);
     ctx.fillText('DRAG  —  AIM CROSSHAIR', W / 2, H * 0.42 + 30);
-    ctx.fillText('HOLD  FIRE BUTTON  —  SHOOT', W / 2, H * 0.42 + 60);
-    ctx.fillText('TAP  BOMB BUTTON  —  DROP BOMB', W / 2, H * 0.42 + 90);
+    ctx.fillText('HOLD FIRE BUTTON  —  SHOOT', W / 2, H * 0.42 + 60);
+    ctx.fillText('TAP BOMB BUTTON  —  DROP BOMB', W / 2, H * 0.42 + 90);
   } else {
     ctx.fillText('SPACEBAR  —  FIRE CANNONS', W / 2, H * 0.42);
     ctx.fillText('LEFT CLICK  —  DROP BOMB', W / 2, H * 0.42 + 32);
     ctx.fillText('MOUSE  —  AIM CROSSHAIR', W / 2, H * 0.42 + 64);
   }
-
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `${Math.max(11, 14 * scale)}px monospace`;
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `${Math.max(11, 14 * scale)}px monospace`;
   ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.60);
-
-  ctx.fillStyle = '#7ab8a0';
-  ctx.font = `bold ${Math.max(13, 16 * scale)}px monospace`;
+  ctx.fillStyle = '#7ab8a0'; ctx.font = `bold ${Math.max(13, 16 * scale)}px monospace`;
   ctx.fillText('Built by Gesner Deslandes', W / 2, H * 0.68);
-  ctx.fillStyle = '#5a9a6a';
-  ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
+  ctx.fillStyle = '#5a9a6a'; ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
   ctx.fillText('Software Developer', W / 2, H * 0.68 + 22);
-  ctx.fillStyle = '#8ab8a8';
-  ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
+  ctx.fillStyle = '#8ab8a8'; ctx.font = `${Math.max(10, 13 * scale)}px monospace`;
   ctx.fillText('Contact: (509) 47385663', W / 2, H * 0.68 + 44);
   ctx.fillText('Email: deslandes78@gmail.com', W / 2, H * 0.68 + 64);
-
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
-  ctx.globalAlpha = pulse;
-  ctx.fillStyle = '#ffaa33';
+  ctx.globalAlpha = pulse; ctx.fillStyle = '#ffaa33';
   ctx.font = `bold ${Math.max(18, 26 * scale)}px monospace`;
   ctx.fillText(touchCapable ? 'TAP TO LAUNCH' : 'PRESS SPACEBAR TO LAUNCH', W / 2, H * 0.90);
   ctx.globalAlpha = 1;
 }
-
 function drawGameOver() {
-  ctx.fillStyle = 'rgba(20, 0, 0, 0.72)';
-  ctx.fillRect(0, 0, W, H);
-
+  ctx.fillStyle = 'rgba(20, 0, 0, 0.72)'; ctx.fillRect(0, 0, W, H);
   const scale = Math.min(W, H) / 800;
   const bigFont = Math.max(30, Math.min(80, W * 0.11));
-
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#ff3344';
-  ctx.font = `bold ${bigFont}px monospace`;
-  ctx.shadowColor = '#ff3344';
-  ctx.shadowBlur = 25;
-  ctx.fillText('SHOT DOWN', W / 2, H * 0.32);
-  ctx.shadowBlur = 0;
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${Math.max(18, 28 * scale)}px monospace`;
+  ctx.fillStyle = '#ff3344'; ctx.font = `bold ${bigFont}px monospace`;
+  ctx.shadowColor = '#ff3344'; ctx.shadowBlur = 25;
+  ctx.fillText('SHOT DOWN', W / 2, H * 0.32); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff'; ctx.font = `bold ${Math.max(18, 28 * scale)}px monospace`;
   ctx.fillText('SCORE  ' + score, W / 2, H * 0.47);
-
-  ctx.fillStyle = '#ffaa33';
-  ctx.font = `${Math.max(14, 20 * scale)}px monospace`;
+  ctx.fillStyle = '#ffaa33'; ctx.font = `${Math.max(14, 20 * scale)}px monospace`;
   ctx.fillText('KILLS  ' + kills, W / 2, H * 0.55);
   ctx.fillText('WAVE REACHED  ' + wave, W / 2, H * 0.61);
-
   if (score > 0 && score >= highScore) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
-    ctx.globalAlpha = pulse;
-    ctx.fillStyle = '#aaffaa';
+    ctx.globalAlpha = pulse; ctx.fillStyle = '#aaffaa';
     ctx.font = `bold ${Math.max(18, 24 * scale)}px monospace`;
     ctx.fillText('★ NEW HIGH SCORE ★', W / 2, H * 0.70);
     ctx.globalAlpha = 1;
   } else {
-    ctx.fillStyle = '#5a9a6a';
-    ctx.font = `${Math.max(12, 16 * scale)}px monospace`;
+    ctx.fillStyle = '#5a9a6a'; ctx.font = `${Math.max(12, 16 * scale)}px monospace`;
     ctx.fillText('HIGH SCORE  ' + highScore.toString().padStart(6, '0'), W / 2, H * 0.70);
   }
-
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
-  ctx.globalAlpha = pulse;
-  ctx.fillStyle = '#ffaa33';
+  ctx.globalAlpha = pulse; ctx.fillStyle = '#ffaa33';
   ctx.font = `bold ${Math.max(16, 22 * scale)}px monospace`;
   ctx.fillText(touchCapable ? 'TAP TO FLY AGAIN' : 'PRESS SPACEBAR TO FLY AGAIN', W / 2, H * 0.88);
   ctx.globalAlpha = 1;
 }
 
-// ================== LOOP ==================
 function loop(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
@@ -1046,7 +1188,6 @@ function loop(now) {
   render();
   requestAnimationFrame(loop);
 }
-
 lastTime = performance.now();
 requestAnimationFrame(loop);
 </script>
